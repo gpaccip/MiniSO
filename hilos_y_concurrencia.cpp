@@ -14,106 +14,146 @@ private:
     queue<int> buffer;
     size_t capacidad;
     mutex mtx;
-    condition_variable cv_vacio;
-    condition_variable cv_lleno;
-    int totalProducir;
+    condition_variable cv_vacio; // Para que los productores esperen si esta lleno
+    condition_variable cv_lleno; // Para que los consumidores esperen si esta vacio
     int producidos;
     int consumidos;
+    bool productores_activos;
 
 public:
-    BufferCompartido(size_t cap, int total) 
-        : capacidad(cap), totalProducir(total), producidos(0), consumidos(0) {}
+    BufferCompartido(size_t cap) 
+        : capacidad(cap), producidos(0), consumidos(0), productores_activos(true) {}
 
     void producir(int idProductor, int item) {
         unique_lock<mutex> lock(mtx);
+        
+        // Mensaje de espera si el buffer esta lleno (Requisito de la rubrica)
+        if (buffer.size() >= capacidad) {
+            cout << "[Productor " << idProductor << "] ESPERANDO: Buffer lleno (" << buffer.size() << "/" << capacidad << ").\n";
+        }
+
         cv_vacio.wait(lock, [this]() { return buffer.size() < capacidad; });
 
         buffer.push(item);
         producidos++;
-        cout << "[Productor " << idProductor << "] Produjo item " << item 
-             << " | Ocupacion Buffer: " << buffer.size() << "/" << capacidad << "\n";
+        cout << "[Productor " << idProductor << "] PRODUJO item " << item 
+             << " | Buffer: " << buffer.size() << "/" << capacidad << "\n";
 
+        // Notificar a los consumidores que hay un nuevo item
         cv_lleno.notify_one();
     }
 
     bool consumir(int idConsumidor, int& itemConsumido) {
         unique_lock<mutex> lock(mtx);
+        
+        // Mensaje de espera si el buffer esta vacio y aun hay productores
+        if (buffer.empty() && productores_activos) {
+            cout << "   [Consumidor " << idConsumidor << "] ESPERANDO: Buffer vacio.\n";
+        }
+
         cv_lleno.wait(lock, [this]() { 
-            return !buffer.empty() || consumidos >= totalProducir; 
+            return !buffer.empty() || !productores_activos; 
         });
 
-        if (buffer.empty() && consumidos >= totalProducir) {
+        // Si el buffer esta vacio y los productores terminaron, salir
+        if (buffer.empty() && !productores_activos) {
             return false;
         }
 
         itemConsumido = buffer.front();
         buffer.pop();
         consumidos++;
-        cout << "   [Consumidor " << idConsumidor << "] Consumio item " << itemConsumido 
-             << " | Ocupacion Buffer: " << buffer.size() << "/" << capacidad << "\n";
+        cout << "   [Consumidor " << idConsumidor << "] CONSUMIO item " << itemConsumido 
+             << " | Buffer: " << buffer.size() << "/" << capacidad << "\n";
 
+        // Notificar a los productores que hay espacio
         cv_vacio.notify_one();
         return true;
     }
 
-    int getConsumidos() {
+    void finalizarProductores() {
         lock_guard<mutex> lock(mtx);
-        return consumidos;
+        productores_activos = false;
+        cv_lleno.notify_all(); // Despertar consumidores restantes para que terminen
     }
 
-    void notificarTodos() {
-        lock_guard<mutex> lock(mtx);
-        cv_lleno.notify_all();
-    }
+    int getProducidos() { return producidos; }
+    int getConsumidos() { return consumidos; }
 };
 
 void ejecutarProductorConsumidor() {
-    int capacidad, total;
-    cout << "\nCapacidad del buffer (ej. 3): ";
+    int capacidad, totalItems, numProductores, numConsumidores;
+    
+    cout << "\n--- CONFIGURACION DEL ESCENARIO ---\n";
+    cout << "Capacidad del buffer (ej. 5): ";
     cin >> capacidad;
-    cout << "Total de elementos a producir (ej. 10): ";
-    cin >> total;
+    cout << "Total de elementos a producir (ej. 20): ";
+    cin >> totalItems;
+    cout << "Cantidad de hilos productores (ej. 2): ";
+    cin >> numProductores;
+    cout << "Cantidad de hilos consumidores (ej. 2): ";
+    cin >> numConsumidores;
 
-    BufferCompartido buffer(capacidad, total);
+    if (numProductores <= 0 || numConsumidores <= 0 || totalItems <= 0 || capacidad <= 0) {
+        cout << "Error: Todos los valores deben ser mayores a 0.\n";
+        return;
+    }
 
+    BufferCompartido buffer(capacidad);
     vector<thread> productores;
     vector<thread> consumidores;
 
-    int itemsPorProductor = total / 2;
+    cout << "\n--- INICIANDO EJECUCION CONCURRENTE ---\n";
 
-    for (int i = 1; i <= 2; ++i) {
-        productores.push_back(thread([&buffer, i, itemsPorProductor, total]() {
-            int inicio = (i - 1) * itemsPorProductor + 1;
-            int fin = (i == 2) ? total : i * itemsPorProductor;
-            for (int val = inicio; val <= fin; ++val) {
-                buffer.producir(i, val);
-                this_thread::sleep_for(chrono::milliseconds(100));
+    // Crear Hilos Productores
+    int itemsPorProductor = totalItems / numProductores;
+    int itemsSobrantes = totalItems % numProductores;
+
+    for (int i = 1; i <= numProductores; ++i) {
+        productores.push_back(thread([&buffer, i, itemsPorProductor, itemsSobrantes, numProductores]() {
+            int itemsAsignados = itemsPorProductor + (i == numProductores ? itemsSobrantes : 0);
+            for (int val = 1; val <= itemsAsignados; ++val) {
+                // El item tendra un ID unico basado en el productor y su iteracion
+                int itemUnico = (i * 1000) + val; 
+                buffer.producir(i, itemUnico);
+                this_thread::sleep_for(chrono::milliseconds(50)); // Simular tiempo de produccion
             }
+            cout << "[Productor " << i << "] FINALIZO su tarea.\n";
         }));
     }
 
-    for (int j = 1; j <= 2; ++j) {
+    // Crear Hilos Consumidores
+    for (int j = 1; j <= numConsumidores; ++j) {
         consumidores.push_back(thread([&buffer, j]() {
             int item;
             while (buffer.consumir(j, item)) {
-                this_thread::sleep_for(chrono::milliseconds(200));
+                this_thread::sleep_for(chrono::milliseconds(80)); // Simular tiempo de consumo
             }
+            cout << "   [Consumidor " << j << "] FINALIZO su tarea.\n";
         }));
     }
 
+    // Sincronizacion: Esperar a que terminen los productores
     for (auto& p : productores) {
         if (p.joinable()) p.join();
     }
 
-    buffer.notificarTodos();
+    // Indicar al buffer que ya no habra mas items
+    buffer.finalizarProductores();
 
+    // Sincronizacion: Esperar a que terminen los consumidores
     for (auto& c : consumidores) {
         if (c.joinable()) c.join();
     }
 
-    cout << "\n----------------------------------------\n";
-    cout << "Total items procesados: " << buffer.getConsumidos() << "/" << total << "\n";
-    cout << "----------------------------------------\n";
+    cout << "\n--- RESUMEN DE EJECUCION ---\n";
+    cout << "Total items producidos: " << buffer.getProducidos() << "\n";
+    cout << "Total items consumidos: " << buffer.getConsumidos() << "\n";
+    if (buffer.getProducidos() == buffer.getConsumidos() && buffer.getProducidos() == totalItems) {
+        cout << "ESTADO: EXITO. Todos los elementos fueron consumidos sin perdidas.\n";
+    } else {
+        cout << "ESTADO: ERROR en la sincronizacion.\n";
+    }
 }
 
 void menuHilosYConcurrencia() {
@@ -134,6 +174,6 @@ void menuHilosYConcurrencia() {
 
         if (opcion == 1) {
             ejecutarProductorConsumidor();
-        }
+        } 
     } while (opcion != 0);
 }
