@@ -1,3 +1,5 @@
+#include "memoria.hpp"
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -499,9 +501,4 @@ void menuMemoria() {
             menuPaginacion();
         }
     }
-}
-
-int main() {
-    menuMemoria();
-    return 0;
 }
