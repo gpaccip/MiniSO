@@ -173,3 +173,8 @@ Ingresa al módulo y utiliza las opciones disponibles:
     pero el orden de aparición puede variar entre ejecuciones debido a
     la planificación de los hilos.
 -   La opción -pthread debe incluirse al compilar y enlazar el proyecto.
+
+6. Videos de demostración
+- Estudiante Giorgini Disalvatore Pacci Pérez:
+  https://youtu.be/K21T3NX9pSY?si=cJNcZMOf1lq8Snf7
+  
