@@ -177,4 +177,5 @@ Ingresa al módulo y utiliza las opciones disponibles:
 6. Videos de demostración
 - Estudiante Giorgini Disalvatore Pacci Pérez:
   https://youtu.be/K21T3NX9pSY?si=cJNcZMOf1lq8Snf7
-  
+- Estudiante - Meneses Chaupi, Grecia Irene:
+  https://youtu.be/FAwcrqZSHUM
